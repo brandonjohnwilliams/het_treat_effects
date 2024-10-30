@@ -33,7 +33,8 @@ librarian::shelf(
   broom,               # tidy tibbles for lm
   sandwich,            # robust standard errors
   lmtest,
-  openxlsx
+  openxlsx,
+  car
 )
 
 # tell here where we are so we can use it elsewhere
