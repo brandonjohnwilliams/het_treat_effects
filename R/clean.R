@@ -2,14 +2,10 @@
 # Author: Brandon Williams
 # Date: 10/29/2024
 # Description: 
-#   Heterogeneous Treatment Effects in "Edu-
-#   cation, HIV, and Early Fertility" (2015)
+#   Cleaning of data files to match those 
+#   used in original paper replication
 #
 ##############################################
-
-# newest version of GenericML not yet on CRAN so install from here (instead of include.R)
-# devtools::install_github("mwelz/GenericML")
-library("GenericML")
 
 # load data
 studysample <- read.dta(here("replication/replication_docs/datasets/studysample_allmerged.dta"))
@@ -123,65 +119,13 @@ for (date in c("05v3", "07v2")) {
     )
 }
 
-# Define global variable list
-varlist <- c("presence", "evmar05v3", "evpreg05v3", "evpregunmar05v3", "evunpregmar05v3", 
-             "dropout07v2", "evmar07v2", "evpreg07v2", "evpregunmar07v2", "evunpregmar07v2")
+# Convert gender to numeric
+studysample <- studysample %>%
+  mutate(sex = as.character(sex),        # Convert to character to allow string manipulation
+         sex = sub(" .*", "", sex))  %>% # Remove everything after the first space
+  mutate(sex = as.numeric(sex))    
 
 
-# Filter data for each gender and control group
-fem_cont <- studysample %>% filter(sex == "2 Female",  group03v1 == "C")
+# Export studysample dataframe to CSV
+write.csv(studysample, here("data/studysampleclean.csv"), row.names = FALSE)
 
-# Obtain control averages for girls
-mean_fem_dropout <- mean(fem_cont$dropout05v3, na.rm = TRUE)
-mean_fem_evmar <- mean(fem_cont$evmar05v3, na.rm = TRUE)
-mean_fem_presence <- mean(fem_cont$presence, na.rm = TRUE)
-
-#### Pickup here: finish regression specification of Table 2 ####
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-# pre-process
-df <- df %>% 
-  data.matrix()
-
-# Define global variables
-treatmentdummies <- c("Uonly", "Honly", "UH")
-treatmentdummiesCT2 <- c("Uonly", "HnoCT", "UHnoCT", "HwithCT", "UHwithCT")
-controlsR <- c("yrbirth_all", "yrbirth_missing", "date05v3", "date07v2", "schsize", "stratum")
-controls <- c("yrbirth_all", "yrbirth_missing", "schsize", "stratum")
-controlsKAP <- c("age", "agemissing", "schsize", "stratum")
-controlsB <- c("yrbirth_all", "yrbirth_missing")
-
-# specify learners
-learners <-
-c("random_forest",                                                # Random Forest  
-    "mlr3::lrn('cv_glmnet', s = 'lambda.min', alpha = 0.5)",      # Elastic Net Regularization on generalized linear model
-    "mlr3::lrn('svm')",                                           # Support vector machine
-    "mlr3::lrn('xgboost')")                                       # Gradient Boost
-
-# GenericML
-
-genML <- GenericML(
-  Z = df,                                   # matrix
-  D = Utreat,                               # treatment assignment 
-  Y = Y,                      # outcome response variable
-  learners_GenericML = learners,            # learners
-  learner_propensity_score = "constant",    # = 0.5 (RCT)
-  num_splits = 100L,                        # number splits
-  quantile_cutoffs = c(0.2, 0.4, 0.6, 0.8), # grouping
-  significance_level = 0.05,                # significance level
-  X1_BLP = X1, X1_GATES = X1,               # regression setup
-  vcov_BLP = vcov, vcov_GATES = vcov,       # covariance setup
-  parallel = TRUE, num_cores = 6L,          # parallelization
-  seed = 20220621)                          # RNG seed
