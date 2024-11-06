@@ -24,15 +24,36 @@ controllist <- c("yrbirth_all", "yrbirth_missing", "date05v3", "date07v2", "schs
 library("GenericML")
 
 # pre-process
-sampleselect <- studysample %>%             
+# sampleselect <- studysample %>%             
+#   select(all_of(varlist),                   # select relevant columns
+#          all_of(controllist), 
+#          all_of(treatlist)) %>% 
+#   filter(complete.cases(.))                 # remove NAs
+y_variable <- varlist[6]
+treatment <- treatlist[1]
+
+sampleselect <- studysample %>% 
+  mutate(control = case_when(
+    Utreat.y == 0 & HIVtreat.y == 0 ~ 1,
+    TRUE ~ 0
+  ))
+
+sampleselect <- sampleselect %>%
+  filter(!!sym(treatment) == 1 | control == 1) %>%
   select(all_of(varlist),                   # select relevant columns
          all_of(controllist), 
-         all_of(treatlist)) %>% 
-  filter(complete.cases(.))                 # remove NAs
+         all_of(treatlist),
+         schoolid
+         ) %>% 
+  filter(complete.cases(.))                 # remove NA
 
 samplematrix <- data.matrix(sampleselect)                         # we need it in matrix form
 Uonly <- sampleselect$Uonly                                       # We need D and Y in vector form
+Honly <- sampleselect$Honly
 dropout05v3 <- sampleselect$dropout05v3
+yrbirth_all <- as.numeric(factor(sampleselect$yrbirth_all))
+
+
 
 # specify learners
 learners <-
@@ -45,14 +66,14 @@ learners <-
 seed <- 1833
 cutoffs <- c(0.2, 0.4, 0.6, 0.8)
 X1 <- setup_X1(funs_Z = c("B", "S")                    # include BCA and CATE controls
-               # , fixed_effects = 
+               , fixed_effects = yrbirth_all
                )
 vcov <- setup_vcov(
                    # estimator = "vcovCL"              # I was not able to get this to take the vcovCL argument
-                   # , arguments = list(cluster = )    # what are we meant to cluster on?
+                   arguments = list(cluster = sampleselect$schoolid)    # what are we meant to cluster on?
                    )        
 lps <- c("constant")
-X1 <- setup_X1(funs_Z = c("B", "S")) 
+# X1 <- setup_X1(funs_Z = c("B", "S")) 
 num_splits <- 100L
 sig_level <- 0.05
 parallel <- TRUE
@@ -63,7 +84,7 @@ num_cores <- 6L
 ## R Markdown
 
 
-```{r HTE}
+```{r HTE Uonly}
 
 genML <- GenericML(
   Z = samplematrix,                         # matrix
@@ -82,8 +103,9 @@ genML <- GenericML(
 )
 
 ```
+Is the propensity score error coming from the block randomization? Page 2763 footnote 6 mentions that is how assignment was done. 
 
-```{r HTE}
+```{r HTE Uonly}
 # BLP
 results_BLP <- get_BLP(genML, plot = TRUE)
 results_BLP       # print method
@@ -98,6 +120,56 @@ results_GATES <- get_GATES(genML, plot = TRUE)
 results_GATES
 plot(results_GATES)
 
+
+```
+``` {r HTE}
+
+# CLAN
+results_CLAN <- get_CLAN(genML, variable = "schsize", plot = TRUE)
+results_CLAN
+plot(results_CLAN)
+```
+
+```{r HTE}
+# best learners
+get_best(genML)
+```
+
+```{r HTE Honly}
+
+genML <- GenericML(
+  Z = samplematrix,                         # matrix
+  D = Honly,                                # treatment assignment 
+  Y = dropout05v3,                          # outcome response variable
+  learners_GenericML = learners,            # learners
+  learner_propensity_score = lps,           # = 0.5 (RCT)
+  num_splits = num_splits,                  # number splits, L is useful for specifying integer and therefore optimizing memory
+  quantile_cutoffs = cutoffs,               # grouping
+  significance_level = sig_level,           # significance level
+  X1_BLP = X1, X1_GATES = X1,               # regression setup
+  vcov_BLP = vcov, vcov_GATES = vcov,       # covariance setup
+  parallel = parallel,                      # parallelization
+  # num_cores = num_cores, 
+  seed = seed                               # RNG seed
+)
+```
+
+```{r HTE Honly}
+# BLP
+results_BLP <- get_BLP(genML, plot = TRUE)
+results_BLP       # print method
+plot(results_BLP) # plot method
+
+
+```
+
+
+```{r HTE}
+# GATES
+results_GATES <- get_GATES(genML, plot = TRUE)
+results_GATES
+plot(results_GATES)
+
 # CLAN
 # results_CLAN <- get_CLAN(genML, variable = "head_age_bl", plot = TRUE)
 # results_CLAN
@@ -105,7 +177,8 @@ plot(results_GATES)
 
 ```
 
-```{r HTE}
-# best learners
-get_best(genML)
-```
+Next steps:
+1. Align results based on inputs
+2. CLAN breakdown of het treat effects
+3. Including more covariates (from entire data)
+4. GenML on other outcome/treatment variables
