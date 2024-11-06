@@ -47,7 +47,10 @@ sampleselect <- sampleselect %>%
          ) %>% 
   filter(complete.cases(.))                 # remove NA
 
-samplematrix <- data.matrix(sampleselect)                         # we need it in matrix form
+# Remove specified columns from sampleselect
+samplematrix <- data.matrix(sampleselect[, !(names(sampleselect) %in% c(varlist, treatlist))])
+
+samplematrix1 <- data.matrix(sampleselect)                         # we need it in matrix form
 Uonly <- sampleselect$Uonly                                       # We need D and Y in vector form
 Honly <- sampleselect$Honly
 dropout05v3 <- sampleselect$dropout05v3
@@ -122,6 +125,7 @@ plot(results_GATES)
 
 
 ```
+
 ``` {r HTE}
 
 # CLAN
