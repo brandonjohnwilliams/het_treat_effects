@@ -9,8 +9,8 @@
 ##############################################
 
 # set wd to this file path of this source file in order to successfully execute 'here' package. For example:
-# setwd("C:/Users/BJW95/Documents/GitHub/het_treat_effects")
-setwd("C:/Users/bjwil/OneDrive/Documents/GitHub/het_treat_effects")
+setwd("C:/Users/BJW95/Documents/GitHub/het_treat_effects")
+# setwd("C:/Users/bjwil/OneDrive/Documents/GitHub/het_treat_effects")
 # installs the librarian package if you don't have it
 if (!("librarian" %in% rownames(utils::installed.packages()))) {
   utils::install.packages("librarian")
