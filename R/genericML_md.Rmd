@@ -66,7 +66,6 @@ print(na_counts_sorted)
 # keep only if less than 2000 NAs
 na_counts <- na_counts[na_counts < 7000]
 
-# let's keep any 
 
 
 ```
@@ -375,6 +374,6 @@ for (i in 1:11) {
 ```
 Next steps:
 1. Align results based on inputs
-2. CLAN breakdown of het treat effects
-3. Including more covariates (from entire data)
-4. GenML on other outcome/treatment variables
+2. CLAN breakdown of het treat effects if necessary
+3. (Partially done) Additional covariates: any more reasonable characteristics we could find?
+4. (Done) GenML on other outcome/treatment variables
