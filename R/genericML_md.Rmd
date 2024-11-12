@@ -5,41 +5,110 @@ date: "2024-10-31"
 output: html_document
 ---
 
+First, let's load in the data and define some global variables to be used throughout.
+
 ```{r setup, include=FALSE}
+
+### Data, global variables, and packages
+
 knitr::opts_chunk$set(echo = TRUE)
 
 # load data
 studysample <- read.csv(here("data/studysampleclean.csv"))
 
 # Define global variable list
-varlist <- c("presence", "evmar05v3", "evpreg05v3", "evpregunmar05v3", "evunpregmar05v3", "dropout05v3",
-             "dropout07v2", "evmar07v2", "evpreg07v2", "evpregunmar07v2", "evunpregmar07v2")
-treatlist <- c("Uonly", "Honly","UH")
-controllist <- c("yrbirth_all", "yrbirth_missing", "date05v3", "date07v2", "schsize", "stratum")
-
-#### Machine Learning ####
+varlist <- c("presence", 
+             "evmar05v3", 
+             "evpreg05v3", 
+             "evpregunmar05v3", 
+             "evunpregmar05v3", 
+             "dropout05v3",
+             "dropout07v2", 
+             "evmar07v2", 
+             "evpreg07v2", 
+             "evpregunmar07v2", 
+             "evunpregmar07v2"
+             )
+treatlist <- c("Uonly", 
+               "Honly",
+               "UH"
+               )
+controllist <- c("yrbirth_all", 
+                 "yrbirth_missing", 
+                 "date05v3", 
+                 "date07v2", 
+                 "schsize", 
+                 "stratum")
 
 # newest version of GenericML not yet on CRAN so install from here (instead of include.R)
 # devtools::install_github("mwelz/GenericML")
 library("GenericML")
 
-# pre-process
-# sampleselect <- studysample %>%             
-#   select(all_of(varlist),                   # select relevant columns
-#          all_of(controllist), 
-#          all_of(treatlist)) %>% 
-#   filter(complete.cases(.))                 # remove NAs
-y_variable <- varlist[6]
-treatment <- treatlist[1]
+```
 
-sampleselect <- studysample %>% 
+Now let's explore some of the data and determine what we might be missing. 
+
+```{r}
+
+# Replace blanks with NA
+studysample[studysample == ""] <- NA
+
+# Count the number of NAs per column
+na_counts <- sapply(studysample, function(x) sum(is.na(x)))
+
+# Sort na_counts in ascending order and display the result
+na_counts_sorted <- sort(na_counts)
+print(na_counts_sorted)
+
+# it appears that there were roughly 7000 people ommitted from the survey in general. So let's keep any NAs under 7000 count
+
+
+# keep only if less than 2000 NAs
+na_counts <- na_counts[na_counts < 7000]
+
+# let's keep any 
+
+
+```
+
+Most of these are outcome variables or survey questions taken after treatment. If might be possible to keep survey questions that have stability as relevant, e.g. house characteristics or ROSCA. Let's add some school variables for additional heterogeneity:
+
+```{r}
+school <- read_dta(here("data/school_info.dta"))
+studysample <- merge(studysample, school, 
+                     by = "schoolid",
+                     suffixes = c("", ".y")
+                     )
+
+controllist <- c("yrbirth_all", 
+                 "yrbirth_missing", 
+                 "date05v3", 
+                 "date07v2", 
+                 "schsize", 
+                 "stratum",
+                 "meanexp",                # teacher experience
+                 "latrine_2004",           # number of latrines in the school
+                 "sdkcpe",                 # school score ranking in SDs
+                 "ratio02"                 # school gender ratio
+                 )
+
+```
+
+
+``` {r}
+### Pre-process data
+
+# create a control (non-treated units) vector
+
+studysample <- studysample %>% 
   mutate(control = case_when(
     Utreat.y == 0 & HIVtreat.y == 0 ~ 1,
     TRUE ~ 0
   ))
 
-sampleselect <- sampleselect %>%
-  filter(!!sym(treatment) == 1 | control == 1) %>%
+# reduce sample to necessary vectors
+
+sampleselect <- studysample %>%
   select(all_of(varlist),                   # select relevant columns
          all_of(controllist), 
          all_of(treatlist),
@@ -47,18 +116,29 @@ sampleselect <- sampleselect %>%
          ) %>% 
   filter(complete.cases(.))                 # remove NA
 
-# Remove specified columns from sampleselect
+# create treatment vectors
+
+Uonly <- sampleselect$Uonly                                       
+Honly <- sampleselect$Honly
+UH <- sampleselect$UH
+
+# Remove columns that correspond to treatment and save as matrix
+
 samplematrix <- data.matrix(sampleselect[, !(names(sampleselect) %in% c(varlist, treatlist))])
 
-samplematrix1 <- data.matrix(sampleselect)                         # we need it in matrix form
-Uonly <- sampleselect$Uonly                                       # We need D and Y in vector form
-Honly <- sampleselect$Honly
-dropout05v3 <- sampleselect$dropout05v3
+# assign ordering to birth year
+
 yrbirth_all <- as.numeric(factor(sampleselect$yrbirth_all))
 
+```
 
 
+```{r}
+
+### ML Parameters 
+ 
 # specify learners
+
 learners <-
   c("random_forest",                                              # Random Forest  
     "mlr3::lrn('cv_glmnet', s = 'lambda.min', alpha = 0.5)",      # Elastic Net Regularization on generalized linear model
@@ -69,14 +149,13 @@ learners <-
 seed <- 1833
 cutoffs <- c(0.2, 0.4, 0.6, 0.8)
 X1 <- setup_X1(funs_Z = c("B", "S")                    # include BCA and CATE controls
-               , fixed_effects = yrbirth_all
+               , fixed_effects = yrbirth_all           # cohort effect
                )
 vcov <- setup_vcov(
                    # estimator = "vcovCL"              # I was not able to get this to take the vcovCL argument
-                   arguments = list(cluster = sampleselect$schoolid)    # what are we meant to cluster on?
+                   arguments = list(cluster = sampleselect$schoolid)    # cluster on school
                    )        
 lps <- c("constant")
-# X1 <- setup_X1(funs_Z = c("B", "S")) 
 num_splits <- 100L
 sig_level <- 0.05
 parallel <- TRUE
@@ -84,15 +163,17 @@ num_cores <- 6L
 
 ```
 
-## R Markdown
-
 
 ```{r HTE Uonly}
 
+Y <- sampleselect[[varlist[6]]]             # "dropout05v3"
+D <- sampleselect[[treatlist[1]]]           # "Uonly"
+
+  
 genML <- GenericML(
   Z = samplematrix,                         # matrix
-  D = Uonly,                                # treatment assignment 
-  Y = dropout05v3,                          # outcome response variable
+  D = D,                                    # treatment assignment 
+  Y = Y,                                    # outcome response variable
   learners_GenericML = learners,            # learners
   learner_propensity_score = lps,           # = 0.5 (RCT)
   num_splits = num_splits,                  # number splits, L is useful for specifying integer and therefore optimizing memory
@@ -106,7 +187,7 @@ genML <- GenericML(
 )
 
 ```
-Is the propensity score error coming from the block randomization? Page 2763 footnote 6 mentions that is how assignment was done. 
+Were we able to fix the propensity score error before? Suddenly I don't remember if we solved it or just figured out how it was coming up. 
 
 ```{r HTE Uonly}
 # BLP
@@ -138,49 +219,160 @@ plot(results_CLAN)
 # best learners
 get_best(genML)
 ```
+Since xgboost is giving us the best results, let's specify that as the only learner and speed up computation time for a loop.
 
-```{r HTE Honly}
+```{r Uonly loop}
+learners <-
+  c("mlr3::lrn('xgboost')")                                       # Gradient Boost
 
-genML <- GenericML(
-  Z = samplematrix,                         # matrix
-  D = Honly,                                # treatment assignment 
-  Y = dropout05v3,                          # outcome response variable
-  learners_GenericML = learners,            # learners
-  learner_propensity_score = lps,           # = 0.5 (RCT)
-  num_splits = num_splits,                  # number splits, L is useful for specifying integer and therefore optimizing memory
-  quantile_cutoffs = cutoffs,               # grouping
-  significance_level = sig_level,           # significance level
-  X1_BLP = X1, X1_GATES = X1,               # regression setup
-  vcov_BLP = vcov, vcov_GATES = vcov,       # covariance setup
-  parallel = parallel,                      # parallelization
-  # num_cores = num_cores, 
-  seed = seed                               # RNG seed
-)
+# Start timer
+start_time <- Sys.time()
+
+# Initialize a list to store results
+genML_results <- list()
+
+# Loop over the first 11 entries in varlist
+for (i in 1:11) {
+  # Select outcome variable Y and treatment assignment D
+  Y <- sampleselect[[varlist[i]]]
+  D <- sampleselect[[treatlist[1]]]  # Keeping constant across iterations
+
+  # Run the GenericML function for each Y
+  genML <- GenericML(
+    Z = samplematrix,                         # matrix
+    D = D,                                    # treatment assignment 
+    Y = Y,                                    # outcome response variable
+    learners_GenericML = learners,            # learners
+    learner_propensity_score = lps,           # = 0.5 (RCT)
+    num_splits = num_splits,                  # number splits, L is useful for specifying integer and therefore optimizing memory
+    quantile_cutoffs = cutoffs,               # grouping
+    significance_level = sig_level,           # significance level
+    X1_BLP = X1, X1_GATES = X1,               # regression setup
+    vcov_BLP = vcov, vcov_GATES = vcov,       # covariance setup
+    parallel = parallel,                      # parallelization
+    # num_cores = num_cores, 
+    seed = seed                               # RNG seed
+  )
+  
+  # Save the result for each iteration in the list
+  genML_results[[i]] <- genML
+
+  # Display progress message
+  cat("Completed iteration:", i, "of 11\n")
+}
+
+# End timer and calculate elapsed time
+end_time <- Sys.time()
+total_time <- end_time - start_time
+cat("Total time taken:", total_time, "\n")
+
+
 ```
 
+```{r HTE Uonly}
+# BLP
+
+# Loop over each genML result stored in genML_results
+for (i in 1:11) {
+  # Get BLP results with plot enabled
+  results_BLP <- get_BLP(genML_results[[i]], plot = TRUE)
+  
+  # Plot the results
+  print(plot(results_BLP))
+}
+
+
+```
+
+
+```{r Uonly}
+# GATES
+
+# Loop over each genML result stored in genML_results
+for (i in 1:11) {
+  # Get BLP results with plot enabled
+  results_GATES <- get_GATES(genML_results[[i]], plot = TRUE)
+  
+  # Plot the results
+  print(plot(results_GATES))
+}
+
+```
+```{r }
+learners <-
+  c("mlr3::lrn('xgboost')")                                       # Gradient Boost
+
+# Start timer
+start_time <- Sys.time()
+
+# Initialize a list to store results
+genML_results_Honly <- list()
+
+# Loop over the first 11 entries in varlist
+for (i in 1:11) {
+  # Select outcome variable Y and treatment assignment D
+  Y <- sampleselect[[varlist[i]]]
+  D <- sampleselect[[treatlist[2]]]  # Honly
+
+  # Run the GenericML function for each Y
+  genML <- GenericML(
+    Z = samplematrix,                         # matrix
+    D = D,                                    # treatment assignment 
+    Y = Y,                                    # outcome response variable
+    learners_GenericML = learners,            # learners
+    learner_propensity_score = lps,           # = 0.5 (RCT)
+    num_splits = num_splits,                  # number splits, L is useful for specifying integer and therefore optimizing memory
+    quantile_cutoffs = cutoffs,               # grouping
+    significance_level = sig_level,           # significance level
+    X1_BLP = X1, X1_GATES = X1,               # regression setup
+    vcov_BLP = vcov, vcov_GATES = vcov,       # covariance setup
+    parallel = parallel,                      # parallelization
+    # num_cores = num_cores, 
+    seed = seed                               # RNG seed
+  )
+  
+  # Save the result for each iteration in the list
+  genML_results_Honly[[i]] <- genML
+
+  # Display progress message
+  cat("Completed iteration:", i, "of 11\n")
+}
+
+# End timer and calculate elapsed time
+end_time <- Sys.time()
+total_time <- end_time - start_time
+cat("Total time taken:", total_time, "\n")
+
+
+```
 ```{r HTE Honly}
 # BLP
-results_BLP <- get_BLP(genML, plot = TRUE)
-results_BLP       # print method
-plot(results_BLP) # plot method
+
+# Loop over each genML result stored in genML_results
+for (i in 1:11) {
+  # Get BLP results with plot enabled
+  results_BLP <- get_BLP(genML_results[[i]], plot = TRUE)
+  
+  # Plot the results
+  print(plot(results_BLP))
+}
 
 
 ```
-
 
 ```{r HTE}
 # GATES
-results_GATES <- get_GATES(genML, plot = TRUE)
-results_GATES
-plot(results_GATES)
 
-# CLAN
-# results_CLAN <- get_CLAN(genML, variable = "head_age_bl", plot = TRUE)
-# results_CLAN
-# plot(results_CLAN)
+# Loop over each genML result stored in genML_results
+for (i in 1:11) {
+  # Get BLP results with plot enabled
+  results_GATES <- get_GATES(genML_results[[i]], plot = TRUE)
+  
+  # Plot the results
+  print(plot(results_GATES))
+}
 
 ```
-
 Next steps:
 1. Align results based on inputs
 2. CLAN breakdown of het treat effects
