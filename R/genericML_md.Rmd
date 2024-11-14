@@ -111,6 +111,7 @@ sampleselect <- studysample %>%
   select(all_of(varlist),                   # select relevant columns
          all_of(controllist), 
          all_of(treatlist),
+         control,
          schoolid
          ) %>% 
   filter(complete.cases(.))                 # remove NA
@@ -121,13 +122,7 @@ Uonly <- sampleselect$Uonly
 Honly <- sampleselect$Honly
 UH <- sampleselect$UH
 
-# Remove columns that correspond to treatment and save as matrix
 
-samplematrix <- data.matrix(sampleselect[, !(names(sampleselect) %in% c(varlist, treatlist))])
-
-# assign ordering to birth year
-
-yrbirth_all <- as.numeric(factor(sampleselect$yrbirth_all))
 
 ```
 
@@ -147,13 +142,6 @@ learners <-
 # Parameterize
 seed <- 1833
 cutoffs <- c(0.2, 0.4, 0.6, 0.8)
-X1 <- setup_X1(funs_Z = c("B", "S")                    # include BCA and CATE controls
-               , fixed_effects = yrbirth_all           # cohort effect
-               )
-vcov <- setup_vcov(
-                   # estimator = "vcovCL"              # I was not able to get this to take the vcovCL argument
-                   arguments = list(cluster = sampleselect$schoolid)    # cluster on school
-                   )        
 lps <- c("constant")
 num_splits <- 100L
 sig_level <- 0.05
@@ -164,11 +152,30 @@ num_cores <- 6L
 
 
 ```{r HTE Uonly}
+treatment <- treatlist[1]
+# for propensity scoring we need to only compare treatment to control 
+sampleselect_treat <- sampleselect %>% 
+  filter(!!sym(treatment) == 1 | control == 1)
 
-Y <- sampleselect[[varlist[6]]]             # "dropout05v3"
-D <- sampleselect[[treatlist[1]]]           # "Uonly"
+Y <- sampleselect_treat[[varlist[6]]]             # "dropout05v3"
+D <- sampleselect_treat[[treatlist[1]]]           # "Uonly"
 
-  
+# assign ordering to birth year
+
+yrbirth_all <- as.numeric(factor(sampleselect_treat$yrbirth_all))
+
+X1 <- setup_X1(funs_Z = c("B", "S")                    # include BCA and CATE controls
+               , fixed_effects = yrbirth_all           # cohort effect
+               )
+vcov <- setup_vcov(
+                   # estimator = "vcovCL"              # I was not able to get this to take the vcovCL argument
+                   arguments = list(cluster = sampleselect_treat$schoolid)    # cluster on school
+                   )        
+
+# Remove columns that correspond to treatment and save as matrix
+
+samplematrix <- data.matrix(sampleselect_treat[, !(names(sampleselect_treat) %in% c(varlist, treatlist))])
+
 genML <- GenericML(
   Z = samplematrix,                         # matrix
   D = D,                                    # treatment assignment 
@@ -232,10 +239,29 @@ genML_results <- list()
 
 # Loop over the first 11 entries in varlist
 for (i in 1:11) {
-  # Select outcome variable Y and treatment assignment D
-  Y <- sampleselect[[varlist[i]]]
-  D <- sampleselect[[treatlist[1]]]  # Keeping constant across iterations
+treatment <- treatlist[1]
+# for propensity scoring we need to only compare treatment to control 
+sampleselect_treat <- sampleselect %>% 
+  filter(!!sym(treatment) == 1 | control == 1)
 
+Y <- sampleselect_treat[[varlist[i]]]             # "dropout05v3"
+D <- sampleselect_treat[[treatlist[1]]]           # "Uonly"
+
+# assign ordering to birth year
+
+yrbirth_all <- as.numeric(factor(sampleselect_treat$yrbirth_all))
+
+X1 <- setup_X1(funs_Z = c("B", "S")                    # include BCA and CATE controls
+               , fixed_effects = yrbirth_all           # cohort effect
+               )
+vcov <- setup_vcov(
+                   # estimator = "vcovCL"              # I was not able to get this to take the vcovCL argument
+                   arguments = list(cluster = sampleselect_treat$schoolid)    # cluster on school
+                   )        
+
+# Remove columns that correspond to treatment and save as matrix
+
+samplematrix <- data.matrix(sampleselect_treat[, !(names(sampleselect_treat) %in% c(varlist, treatlist))])
   # Run the GenericML function for each Y
   genML <- GenericML(
     Z = samplematrix,                         # matrix
@@ -297,6 +323,8 @@ for (i in 1:11) {
 }
 
 ```
+We can also loop over other treatments:
+
 ```{r }
 learners <-
   c("mlr3::lrn('xgboost')")                                       # Gradient Boost
@@ -309,10 +337,30 @@ genML_results_Honly <- list()
 
 # Loop over the first 11 entries in varlist
 for (i in 1:11) {
-  # Select outcome variable Y and treatment assignment D
-  Y <- sampleselect[[varlist[i]]]
-  D <- sampleselect[[treatlist[2]]]  # Honly
+treatnum <- 2  
+treatment <- treatlist[treatnum]
+# for propensity scoring we need to only compare treatment to control 
+sampleselect_treat <- sampleselect %>% 
+  filter(!!sym(treatment) == 1 | control == 1)
 
+Y <- sampleselect_treat[[varlist[i]]]             # "dropout05v3"
+D <- sampleselect_treat[[treatlist[treatnum]]]           # "Honly"
+
+# assign ordering to birth year
+
+yrbirth_all <- as.numeric(factor(sampleselect_treat$yrbirth_all))
+
+X1 <- setup_X1(funs_Z = c("B", "S")                    # include BCA and CATE controls
+               , fixed_effects = yrbirth_all           # cohort effect
+               )
+vcov <- setup_vcov(
+                   # estimator = "vcovCL"              # I was not able to get this to take the vcovCL argument
+                   arguments = list(cluster = sampleselect_treat$schoolid)    # cluster on school
+                   )        
+
+# Remove columns that correspond to treatment and save as matrix
+
+samplematrix <- data.matrix(sampleselect_treat[, !(names(sampleselect_treat) %in% c(varlist, treatlist))])
   # Run the GenericML function for each Y
   genML <- GenericML(
     Z = samplematrix,                         # matrix
