@@ -125,6 +125,8 @@ studysample <- studysample %>%
          Q_b1_13_school_years = as.numeric(Q_b1_13_school_years))
 
 controls_numeric <- potential_variables[!potential_variables %in% c("Q_a3_9_minor", "Q_b1_14_polytechnic", "Q_b2_26_business")]
+extra_controls_categorical <- c("Q_a3_9_minor", "Q_b1_14_polytechnic", "Q_b2_26_business")
+
 ```
 
 
@@ -147,7 +149,8 @@ controllist <- c("yrbirth_all",
                  "latrine_2004",           # number of latrines in the school
                  "sdkcpe",                 # school score ranking in SDs
                  "ratio02",                 # school gender ratio
-                 controls_numeric
+                 controls_numeric,
+                 extra_controls_categorical
                  )
 
 ```
