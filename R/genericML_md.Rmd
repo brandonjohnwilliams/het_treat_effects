@@ -69,6 +69,64 @@ na_counts <- na_counts[na_counts < 7000]
 
 
 ```
+```{r}
+## Adding additional covariates
+
+# studysample %>% summarize(across(everything(), ~sum(is.na(.))/n())) %>% 
+#   pivot_longer(everything(), names_to = "Variable", values_to = "Percentage NA") %>% 
+#   filter(`Percentage NA` < 0.5) %>% View()
+
+potential_variables <- c(
+  "Q_a3_9_minor",
+  # "Q_b1_12_edu_level",
+  "Q_b1_13_school_years",
+  "Q_b1_14_polytechnic",
+  "Q_b1_16_walls",
+  # "Q_b1_17_roof",
+  "Q_b1_18a_toilets_number",
+  # "Q_b1_20_shared_toilet",
+  # "Q_b2_22_employed",
+  "Q_b2_26_business",
+  # "Q_b2_34_news_source",
+  # "Q_b2_35_political_news",
+  # "Q_b2_36_interested_politics",
+  # "Q_b2_37_edu_important",
+  # "Q_b2_39_boy_job",
+  "Q_b2_40_wage_age25",
+  # "Q_b2_41_girl_job",
+  "Q_b2_42_wage_age25",
+  "Q_b2_44_wage",
+  "Q_b2_60_kids_number",
+  "Q_b2_62_man_age",
+  "Q_b2_65_woman_age_1stchild"
+  # "Q_b3_102_get_condoms"
+)
+
+studysample <- studysample %>% 
+  mutate(
+    Q_a3_9_minor = case_when(
+      Q_a3_9_minor == "Yes" ~ 1,
+      Q_a3_9_minor == "No" ~ 0,
+      TRUE ~ NA_real_
+    ),
+    Q_b1_14_polytechnic = case_when(
+      Q_b1_14_polytechnic == "Yes" ~ 1,
+      Q_b1_14_polytechnic == "No" ~ 0,
+      TRUE ~ NA_real_
+    ),
+    Q_b2_26_business = case_when(
+      Q_b2_26_business == "Yes" ~ 1,
+      Q_b2_26_business == "No" ~ 0,
+      TRUE ~ NA_real_)
+  ) %>% 
+  mutate(across(starts_with("Q_b2_"), ~as.numeric(.))) %>% 
+  mutate(Q_b1_16_walls = as.numeric(Q_b1_16_walls),
+         Q_b1_18a_toilets_number = as.numeric(Q_b1_18a_toilets_number),
+         Q_b1_13_school_years = as.numeric(Q_b1_13_school_years))
+
+controls_numeric <- potential_variables[!potential_variables %in% c("Q_a3_9_minor", "Q_b1_14_polytechnic", "Q_b2_26_business")]
+```
+
 
 Most of these are outcome variables or survey questions taken after treatment. If might be possible to keep survey questions that have stability as relevant, e.g. house characteristics or ROSCA. Let's add some school variables for additional heterogeneity:
 
@@ -88,7 +146,8 @@ controllist <- c("yrbirth_all",
                  "meanexp",                # teacher experience
                  "latrine_2004",           # number of latrines in the school
                  "sdkcpe",                 # school score ranking in SDs
-                 "ratio02"                 # school gender ratio
+                 "ratio02",                 # school gender ratio
+                 controls_numeric
                  )
 
 ```
@@ -115,6 +174,9 @@ sampleselect <- studysample %>%
          schoolid
          ) %>% 
   filter(complete.cases(.))                 # remove NA
+
+sampleselect <- sampleselect  %>%
+  mutate(across(all_of(controls_numeric), ~ scale(.))) 
 
 # create treatment vectors
 
@@ -207,7 +269,7 @@ plot(results_BLP) # plot method
 ```{r HTE}
 # GATES
 results_GATES <- get_GATES(genML, plot = TRUE)
-results_GATES
+# results_GATES
 plot(results_GATES)
 
 
@@ -216,7 +278,7 @@ plot(results_GATES)
 ``` {r HTE}
 
 # CLAN
-results_CLAN <- get_CLAN(genML, variable = "schsize", plot = TRUE)
+results_CLAN <- get_CLAN(genML, variable = "Q_b2_40_wage_age25", plot = TRUE)
 results_CLAN
 plot(results_CLAN)
 ```
